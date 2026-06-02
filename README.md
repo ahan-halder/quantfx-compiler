@@ -36,20 +36,20 @@ Quant systems have a painful gap: analysts write Python/NumPy, which is slow, bu
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        quantfx-compiler pipeline                        │
-│                                                                         │
-│   DSL Source                                                            │
-│   (.qfx file)                                                           │
-│       │                                                                 │
-│       ▼                                                                 │
-│  ┌─────────┐    ┌────────────────┐    ┌───────────────────────────┐    │
-│  │  Parser  │───▶│  AST / HIR     │───▶│   MLIR Dialect Lowering   │    │
-│  │ (ANTLR4/ │    │  (typed ops:   │    │   (qfx.timeseries →       │    │
-│  │  custom) │    │  window, corr, │    │    affine + linalg)       │    │
-│  └─────────┘    │  vwap, zscore) │    └──────────────┬────────────┘    │
-│                 └────────────────┘                   │                 │
-│                                                      ▼                 │
+┌────────────────────────────────────────────────────────────────────────┐
+│                        quantfx-compiler pipeline                       │
+│                                                                        │
+│   DSL Source                                                           │
+│   (.qfx file)                                                          │
+│       │                                                                │
+│       ▼                                                                │
+│  ┌──────────┐    ┌────────────────┐    ┌───────────────────────────┐   │
+│  │  Parser  │───>│  AST / HIR     │───>│   MLIR Dialect Lowering   │   │
+│  │ (ANTLR4/ │    │  (typed ops:   │    │   (qfx.timeseries →       │   │
+│  │  custom) │    │  window, corr, │    │    affine + linalg)       │   │
+│  └──────────┘    │  vwap, zscore) │    └──────────────┬────────────┘   │
+│                  └────────────────┘                   │                │
+│                                                       ▼                │
 │                                          ┌───────────────────────┐     │
 │                                          │  MLIR Optimization    │     │
 │                                          │  Pass Pipeline        │     │
@@ -72,23 +72,23 @@ Quant systems have a painful gap: analysts write Python/NumPy, which is slow, bu
 │                             │                       │                  │
 │                             ▼                       ▼                  │
 │                    ┌──────────────────────────────────────┐            │
-│                    │          Auto-Tuner (GA Loop)         │            │
-│                    │                                       │            │
-│                    │  Population of (pass order, flags)    │            │
-│                    │       │                               │            │
-│                    │       ▼                               │            │
-│                    │  Compile → Microbenchmark → Fitness   │            │
-│                    │       │                               │            │
-│                    │       ▼                               │            │
-│                    │  Crossover + Mutation → Next Gen      │            │
+│                    │          Auto-Tuner (GA Loop)        │            │
+│                    │                                      │            │
+│                    │  Population of (pass order, flags)   │            │
+│                    │       │                              │            │
+│                    │       ▼                              │            │
+│                    │  Compile → Microbenchmark → Fitness  │            │
+│                    │       │                              │            │
+│                    │       ▼                              │            │
+│                    │  Crossover + Mutation → Next Gen     │            │
 │                    └──────────────────────────────────────┘            │
 │                                         │                              │
 │                                         ▼                              │
 │                              ┌──────────────────┐                      │
-│                              │  Tuned Binary     │                      │
-│                              │  + Config Cache   │                      │
+│                              │  Tuned Binary    │                      │
+│                              │  + Config Cache  │                      │
 │                              └──────────────────┘                      │
-└─────────────────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
