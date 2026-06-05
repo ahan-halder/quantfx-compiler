@@ -1,0 +1,10 @@
+# Rolling volatility and EMA crossover signal
+import stream prices : f32[1024]
+
+let sigma = rolling_std(prices, window=20)
+let ema_fast = ema(prices, alpha=0.1)
+let ema_slow = ema(prices, alpha=0.05)
+let signal = crossover(ema_fast, ema_slow)
+
+emit sigma : f32[1024]
+emit signal : f32[1024]

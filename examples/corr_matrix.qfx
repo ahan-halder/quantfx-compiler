@@ -1,0 +1,7 @@
+# Rolling covariance between two price streams
+import stream prices_a : f32[1024]
+import stream prices_b : f32[1024]
+
+let cov = rolling_cov(prices_a, prices_b, window=20)
+
+emit cov : f32[1024]

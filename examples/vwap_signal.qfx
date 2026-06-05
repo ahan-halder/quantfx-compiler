@@ -1,0 +1,9 @@
+# Compute rolling VWAP and z-score signal over a tick stream
+import stream prices : f32[1024]
+import stream volumes : f32[1024]
+
+let vwap = rolling_vwap(prices, volumes, window=20)
+let sigma = rolling_std(prices, window=20)
+let signal = zscore(prices, vwap, sigma)
+
+emit signal : f32[1024]
