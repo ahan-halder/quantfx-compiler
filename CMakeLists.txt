@@ -42,3 +42,4 @@ add_definitions(${LLVM_DEFINITIONS})
 
 add_subdirectory(compiler)
 add_subdirectory(tools)
+add_subdirectory(benchmarks)
