@@ -16,6 +16,10 @@ Generates CUDA C with a persistent-style launcher (`qfx_launch`). Use `-o kernel
 ## Benchmarks
 
 ```bash
+./build/tools/quantfx-compiler/quantfx-compiler examples/corr_matrix.qfx --benchmark
 ./build/benchmarks/bench_rolling --n 10000 --window 20 --iters 10000
 .venv/bin/python benchmarks/micro/bench_compare.py
+python tuner/search.py --kernel examples/corr_matrix.qfx --generations 50 --population 32
 ```
+
+See [testing_instructions.md](testing_instructions.md) for the full command reference.
