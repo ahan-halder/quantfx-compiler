@@ -2,8 +2,10 @@
 #include "Lexer.h"
 #include "Parser.h"
 #include "qfx/Conversion/HirToMLIR.h"
+#include "GPUCodeGen.h"
 #include "qfx/Conversion/LowerToLLVM.h"
 #include "qfx/IR/QFXDialect.h"
+#include "qfx/Transforms/Passes.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -37,6 +39,10 @@ static llvm::cl::opt<std::string> target("target", llvm::cl::desc("Compilation t
 static llvm::cl::opt<bool> emitMlir("emit-mlir", llvm::cl::desc("Print MLIR and exit"));
 static llvm::cl::opt<bool> emitLlvm("emit-llvm", llvm::cl::desc("Emit LLVM IR (.ll)"));
 static llvm::cl::opt<bool> verifyRun("verify", llvm::cl::desc("JIT-run kernel on synthetic data"));
+static llvm::cl::opt<int> optLevel("O", llvm::cl::desc("Optimization level (0-3)"), llvm::cl::init(2));
+static llvm::cl::opt<bool> streamingMode("streaming",
+                                          llvm::cl::desc("Trailing-window incremental semantics"));
+static llvm::cl::opt<bool> emitPtx("emit-ptx", llvm::cl::desc("Emit PTX (CUDA target)"));
 
 static std::string readFile(const std::string &path) {
   auto file = mlir::openInputFile(path);
@@ -83,7 +89,27 @@ static int compileQfx(const std::string &source, const std::string &outPath) {
     return 0;
   }
 
-  if (mlir::failed(lowerModuleToLLVM(module, context))) {
+  OptLevel level = OptLevel::O0;
+  if (optLevel >= 3)
+    level = OptLevel::O3;
+  else if (optLevel == 2)
+    level = OptLevel::O2;
+  else if (optLevel == 1)
+    level = OptLevel::O1;
+
+  if (target == "cuda") {
+    if (outPath.empty()) {
+      llvm::errs() << "missing -o for CUDA output\n";
+      return 1;
+    }
+    if (mlir::failed(emitCudaKernel(hir, outPath, emitPtx || outPath.ends_with(".ptx")))) {
+      llvm::errs() << "CUDA codegen failed\n";
+      return 1;
+    }
+    return 0;
+  }
+
+  if (mlir::failed(runCPUPipeline(module, context, level, streamingMode))) {
     llvm::errs() << "LLVM lowering failed\n";
     return 1;
   }
@@ -171,7 +197,7 @@ static int compileQfx(const std::string &source, const std::string &outPath) {
   }
 
   if (target != "cpu") {
-    llvm::errs() << "only --target cpu is implemented in Phase 1\n";
+    llvm::errs() << "unsupported target: " << target << " (use cpu or cuda)\n";
     return 1;
   }
 

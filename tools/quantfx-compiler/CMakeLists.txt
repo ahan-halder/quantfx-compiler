@@ -6,14 +6,17 @@ add_executable(quantfx-compiler main.cpp)
 target_include_directories(quantfx-compiler PRIVATE
   ${PROJECT_SOURCE_DIR}/compiler/frontend
   ${PROJECT_SOURCE_DIR}/compiler/mlir/include
+  ${PROJECT_SOURCE_DIR}/compiler/backend/gpu
 )
 
 set(LIBS
   ${dialect_libs}
   ${conversion_libs}
   QFXConversion
+  QFXTransforms
   QFXDialect
   qfxFrontend
+  qfxGPU
   MLIRExecutionEngine
   MLIRLLVMToLLVMIRTranslation
   MLIRTargetLLVMIRExport
