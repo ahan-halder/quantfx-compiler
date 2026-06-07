@@ -1,5 +1,6 @@
 #include "qfx/Conversion/LowerToLLVM.h"
 #include "qfx/Conversion/QFXToAffine.h"
+#include "qfx/Transforms/CompilerConfig.h"
 #include "qfx/Transforms/Passes.h"
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
@@ -21,29 +22,24 @@
 #include "mlir/Target/LLVMIR/Dialect/All.h"
 #include "mlir/Target/LLVMIR/Export.h"
 
-#include "llvm/IR/LegacyPassManager.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/TargetSelect.h"
-#include "llvm/Support/raw_ostream.h"
-
 namespace qfx {
 
-static void addOptimizationPasses(mlir::OpPassManager &pm, OptLevel level, bool streaming) {
-  if (level >= OptLevel::O1)
+static void addOptimizationPasses(mlir::OpPassManager &pm, const CompilerConfig &config) {
+  if (config.windowFusion && config.level >= OptLevel::O1)
     pm.addPass(createWindowFusionPass());
-  if (streaming)
+  if (config.streaming)
     pm.addPass(createSlidingWindowUpdatePass());
   pm.addPass(createQFXToAffinePass());
-  if (level >= OptLevel::O2) {
-    pm.addPass(createLoopTilingPass(64));
-    pm.addPass(createPrefetchInsertionPass(8));
-  }
-  if (level >= OptLevel::O3)
-    pm.addPass(createVectorizeLoopsPass(16));
+  if (config.loopTiling && config.level >= OptLevel::O2)
+    pm.addPass(createLoopTilingPass(config.tileSize));
+  if (config.prefetch && config.level >= OptLevel::O2)
+    pm.addPass(createPrefetchInsertionPass(config.prefetchDistance));
+  if (config.vectorize && config.level >= OptLevel::O3)
+    pm.addPass(createVectorizeLoopsPass(config.vectorWidth));
 }
 
 mlir::LogicalResult runCPUPipeline(mlir::ModuleOp module, mlir::MLIRContext &context,
-                                   OptLevel level, bool streaming) {
+                                   const CompilerConfig &config) {
   mlir::DialectRegistry registry;
   registry.insert<mlir::func::FuncDialect, mlir::memref::MemRefDialect,
                   mlir::arith::ArithDialect, mlir::scf::SCFDialect, mlir::vector::VectorDialect,
@@ -53,10 +49,10 @@ mlir::LogicalResult runCPUPipeline(mlir::ModuleOp module, mlir::MLIRContext &con
   context.loadAllAvailableDialects();
 
   mlir::PassManager pm(&context);
-  addOptimizationPasses(pm, level, streaming);
+  addOptimizationPasses(pm, config);
   pm.addPass(mlir::createConvertSCFToCFPass());
   pm.addPass(mlir::memref::createExpandStridedMetadataPass());
-  if (level >= OptLevel::O3)
+  if (config.vectorize && config.level >= OptLevel::O3)
     pm.addPass(mlir::createConvertVectorToLLVMPass());
   pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass());
   pm.addPass(mlir::createConvertFuncToLLVMPass());
@@ -66,10 +62,6 @@ mlir::LogicalResult runCPUPipeline(mlir::ModuleOp module, mlir::MLIRContext &con
   pm.addPass(mlir::createReconcileUnrealizedCastsPass());
 
   return pm.run(module);
-}
-
-mlir::LogicalResult lowerModuleToLLVM(mlir::ModuleOp module, mlir::MLIRContext &context) {
-  return runCPUPipeline(module, context, OptLevel::O2, /*streaming=*/false);
 }
 
 void registerQFXPasses() {
