@@ -1,10 +1,12 @@
+#include "Benchmark.h"
 #include "HIR.h"
 #include "Lexer.h"
 #include "Parser.h"
-#include "qfx/Conversion/HirToMLIR.h"
 #include "GPUCodeGen.h"
+#include "qfx/Conversion/HirToMLIR.h"
 #include "qfx/Conversion/LowerToLLVM.h"
 #include "qfx/IR/QFXDialect.h"
+#include "qfx/Transforms/CompilerConfig.h"
 #include "qfx/Transforms/Passes.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -13,13 +15,10 @@
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/ExecutionEngine/OptUtils.h"
 #include "mlir/IR/DialectRegistry.h"
-#include "mlir/Parser/Parser.h"
 #include "mlir/Support/FileUtilities.h"
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
-#include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <iostream>
@@ -39,16 +38,56 @@ static llvm::cl::opt<std::string> target("target", llvm::cl::desc("Compilation t
 static llvm::cl::opt<bool> emitMlir("emit-mlir", llvm::cl::desc("Print MLIR and exit"));
 static llvm::cl::opt<bool> emitLlvm("emit-llvm", llvm::cl::desc("Emit LLVM IR (.ll)"));
 static llvm::cl::opt<bool> verifyRun("verify", llvm::cl::desc("JIT-run kernel on synthetic data"));
+static llvm::cl::opt<bool> benchmarkRun("benchmark", llvm::cl::desc("JIT benchmark (JSON to stdout)"));
 static llvm::cl::opt<int> optLevel("O", llvm::cl::desc("Optimization level (0-3)"), llvm::cl::init(2));
 static llvm::cl::opt<bool> streamingMode("streaming",
                                           llvm::cl::desc("Trailing-window incremental semantics"));
 static llvm::cl::opt<bool> emitPtx("emit-ptx", llvm::cl::desc("Emit PTX (CUDA target)"));
+static llvm::cl::opt<bool> noFusion("no-fusion", llvm::cl::desc("Disable window fusion pass"));
+static llvm::cl::opt<bool> noTiling("no-tiling", llvm::cl::desc("Disable loop tiling pass"));
+static llvm::cl::opt<bool> noPrefetch("no-prefetch", llvm::cl::desc("Disable prefetch pass"));
+static llvm::cl::opt<bool> enableVectorize("vectorize", llvm::cl::desc("Enable vectorization pass"));
+static llvm::cl::opt<int> tileSize("tile-size", llvm::cl::desc("Loop tile size"), llvm::cl::init(64));
+static llvm::cl::opt<int> vectorWidth("vector-width", llvm::cl::desc("Vector width (f32 lanes)"),
+                                       llvm::cl::init(16));
+static llvm::cl::opt<int> prefetchDistance("prefetch-distance", llvm::cl::desc("Prefetch distance"),
+                                           llvm::cl::init(8));
+static llvm::cl::opt<int> llvmCodegenOpt("llvm-codegen-opt",
+                                         llvm::cl::desc("LLVM JIT codegen opt (0-3)"),
+                                         llvm::cl::init(3));
+static llvm::cl::opt<int> benchWarmup("bench-warmup", llvm::cl::desc("Benchmark warmup iterations"),
+                                      llvm::cl::init(100));
+static llvm::cl::opt<int> benchIters("bench-iters", llvm::cl::desc("Benchmark measured iterations"),
+                                    llvm::cl::init(1000));
 
 static std::string readFile(const std::string &path) {
   auto file = mlir::openInputFile(path);
   if (!file)
     return {};
   return (*file)->getBuffer().str();
+}
+
+static CompilerConfig buildConfig() {
+  CompilerConfig config;
+  if (optLevel >= 3)
+    config.level = OptLevel::O3;
+  else if (optLevel == 2)
+    config.level = OptLevel::O2;
+  else if (optLevel == 1)
+    config.level = OptLevel::O1;
+  else
+    config.level = OptLevel::O0;
+
+  config.streaming = streamingMode;
+  config.windowFusion = !noFusion;
+  config.loopTiling = !noTiling;
+  config.prefetch = !noPrefetch;
+  config.vectorize = enableVectorize;
+  config.tileSize = tileSize;
+  config.vectorWidth = vectorWidth;
+  config.prefetchDistance = prefetchDistance;
+  config.llvmCodegenOpt = llvmCodegenOpt;
+  return config;
 }
 
 static int compileQfx(const std::string &source, const std::string &outPath) {
@@ -59,7 +98,7 @@ static int compileQfx(const std::string &source, const std::string &outPath) {
   try {
     ast = parser.parseModule(error);
   } catch (const std::exception &ex) {
-  llvm::errs() << "parse error: " << ex.what() << "\n";
+    llvm::errs() << "parse error: " << ex.what() << "\n";
     return 1;
   }
   if (!ast) {
@@ -72,6 +111,8 @@ static int compileQfx(const std::string &source, const std::string &outPath) {
     llvm::errs() << "HIR error: " << error << "\n";
     return 1;
   }
+
+  CompilerConfig config = buildConfig();
 
   mlir::DialectRegistry registry;
   registry.insert<mlir::func::FuncDialect, mlir::memref::MemRefDialect, qfx::QFXDialect>();
@@ -89,14 +130,6 @@ static int compileQfx(const std::string &source, const std::string &outPath) {
     return 0;
   }
 
-  OptLevel level = OptLevel::O0;
-  if (optLevel >= 3)
-    level = OptLevel::O3;
-  else if (optLevel == 2)
-    level = OptLevel::O2;
-  else if (optLevel == 1)
-    level = OptLevel::O1;
-
   if (target == "cuda") {
     if (outPath.empty()) {
       llvm::errs() << "missing -o for CUDA output\n";
@@ -109,7 +142,7 @@ static int compileQfx(const std::string &source, const std::string &outPath) {
     return 0;
   }
 
-  if (mlir::failed(runCPUPipeline(module, context, level, streamingMode))) {
+  if (mlir::failed(runCPUPipeline(module, context, config))) {
     llvm::errs() << "LLVM lowering failed\n";
     return 1;
   }
@@ -123,6 +156,16 @@ static int compileQfx(const std::string &source, const std::string &outPath) {
       llvm::errs() << "failed to emit LLVM IR\n";
       return 1;
     }
+    return 0;
+  }
+
+  if (benchmarkRun) {
+    BenchStats stats;
+    if (!runBenchmark(module, hir, config, benchWarmup, benchIters, stats)) {
+      llvm::errs() << "benchmark failed\n";
+      return 1;
+    }
+    printBenchmarkJson(stats, benchWarmup, benchIters);
     return 0;
   }
 
@@ -144,6 +187,8 @@ static int compileQfx(const std::string &source, const std::string &outPath) {
 
     std::unordered_map<std::string, std::vector<float> *> streams = {
         {"prices", &prices},
+        {"prices_a", &prices},
+        {"prices_b", &volumes},
         {"volumes", &volumes},
     };
 

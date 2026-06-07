@@ -1,7 +1,7 @@
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 
-add_executable(quantfx-compiler main.cpp)
+add_executable(quantfx-compiler main.cpp Benchmark.cpp)
 
 target_include_directories(quantfx-compiler PRIVATE
   ${PROJECT_SOURCE_DIR}/compiler/frontend
