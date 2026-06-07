@@ -1,5 +1,7 @@
 #pragma once
 
+#include "qfx/Transforms/Passes.h"
+
 #include "mlir/IR/BuiltinOps.h"
 
 #include <string>
@@ -9,9 +11,6 @@ class MLIRContext;
 } // namespace mlir
 
 namespace qfx {
-
-mlir::LogicalResult lowerModuleToLLVM(mlir::ModuleOp module,
-                                      mlir::MLIRContext &context);
 
 mlir::LogicalResult emitModuleLLVMIR(mlir::ModuleOp module, mlir::MLIRContext &context,
                                      const std::string &path);

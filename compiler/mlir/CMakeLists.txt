@@ -22,21 +22,46 @@ add_mlir_dialect_library(QFXDialect
   MLIRSideEffectInterfaces
 )
 
-add_mlir_library(QFXConversion
-  lib/Conversion/HirToMLIR.cpp
-  lib/Conversion/QFXToAffine.cpp
-  lib/Conversion/LowerToLLVM.cpp
+add_mlir_library(QFXTransforms
+  lib/Transforms/WindowFusion.cpp
+  lib/Transforms/SlidingWindowUpdate.cpp
+  lib/Transforms/LoopTiling.cpp
+  lib/Transforms/VectorizeLoops.cpp
+  lib/Transforms/PrefetchInsertion.cpp
 
   ADDITIONAL_HEADER_DIRS
   ${CMAKE_CURRENT_SOURCE_DIR}/include
 
   LINK_LIBS PUBLIC
   QFXDialect
+  MLIRFuncDialect
+  MLIRMemRefDialect
+  MLIRArithDialect
+  MLIRSCFDialect
+  MLIRVectorDialect
+  MLIRPass
+  MLIRTransforms
+)
+
+add_mlir_library(QFXConversion
+  lib/Conversion/HirToMLIR.cpp
+  lib/Conversion/QFXToAffine.cpp
+  lib/Conversion/LowerToLLVM.cpp
+  lib/Conversion/PassPipeline.cpp
+
+  ADDITIONAL_HEADER_DIRS
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+
+  LINK_LIBS PUBLIC
+  QFXDialect
+  QFXTransforms
   qfxFrontend
   MLIRFuncDialect
   MLIRMemRefDialect
   MLIRArithDialect
   MLIRSCFDialect
+  MLIRVectorDialect
+  MLIRVectorToLLVM
   MLIRAffineToStandard
   MLIRSCFToControlFlow
   MLIRMemRefToLLVM
@@ -54,4 +79,8 @@ add_mlir_library(QFXConversion
 target_include_directories(QFXConversion PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${PROJECT_SOURCE_DIR}/compiler/frontend
+)
+
+target_include_directories(QFXTransforms PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
 )

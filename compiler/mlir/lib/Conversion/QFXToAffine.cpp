@@ -27,6 +27,57 @@ static mlir::Value allocLike(mlir::PatternRewriter &rewriter, mlir::Location loc
   return rewriter.create<mlir::memref::AllocOp>(loc, type);
 }
 
+static bool useIncremental(mlir::UnitAttr attr) { return static_cast<bool>(attr); }
+
+static mlir::Value buildTrailingMean(mlir::PatternRewriter &rewriter, mlir::Location loc,
+                                     mlir::Value input, int64_t window) {
+  auto type = llvm::cast<mlir::MemRefType>(input.getType());
+  const int64_t n = type.getDimSize(0);
+  auto f32 = rewriter.getF32Type();
+  mlir::Value output = allocLike(rewriter, loc, type);
+
+  auto zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
+  auto one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
+  auto nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
+  auto wCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, window);
+  auto zeroF = rewriter.create<mlir::arith::ConstantFloatOp>(
+      loc, mlir::FloatAttr::get(f32, 0.0));
+
+  auto loop = rewriter.create<mlir::scf::ForOp>(loc, zero, nCst, one, zeroF);
+  rewriter.setInsertionPointToStart(loop.getBody());
+  mlir::Value k = loop.getInductionVar();
+  mlir::Value runningSum = loop.getRegionIterArgs()[0];
+
+  mlir::Value sample = load(rewriter, loc, input, k);
+  mlir::Value nextSum = rewriter.create<mlir::arith::AddFOp>(loc, runningSum, sample);
+
+  auto kGeW = rewriter.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sge, k, wCst);
+  auto ifOp = rewriter.create<mlir::scf::IfOp>(loc, mlir::TypeRange{f32}, kGeW,
+                                               /*withElseRegion=*/true);
+  rewriter.setInsertionPointToStart(&ifOp.getThenRegion().front());
+  mlir::Value oldIdx = rewriter.create<mlir::arith::SubIOp>(loc, k, wCst);
+  mlir::Value oldSample = load(rewriter, loc, input, oldIdx);
+  mlir::Value subbed = rewriter.create<mlir::arith::SubFOp>(loc, nextSum, oldSample);
+  rewriter.create<mlir::scf::YieldOp>(loc, subbed);
+  rewriter.setInsertionPointToStart(&ifOp.getElseRegion().front());
+  rewriter.create<mlir::scf::YieldOp>(loc, nextSum);
+  rewriter.setInsertionPointAfter(ifOp);
+
+  mlir::Value countF = rewriter.create<mlir::arith::UIToFPOp>(
+      loc, f32, rewriter.create<mlir::arith::AddIOp>(loc, k, one));
+  auto kGeWCount = rewriter.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sge, k,
+                                                        rewriter.create<mlir::arith::SubIOp>(
+                                                            loc, wCst, one));
+  mlir::Value wF = rewriter.create<mlir::arith::UIToFPOp>(loc, f32, wCst);
+  mlir::Value denom =
+      rewriter.create<mlir::arith::SelectOp>(loc, kGeWCount, wF, countF);
+  mlir::Value mean = rewriter.create<mlir::arith::DivFOp>(loc, ifOp.getResult(0), denom);
+  store(rewriter, loc, mean, output, k);
+  rewriter.create<mlir::scf::YieldOp>(loc, ifOp.getResult(0));
+  rewriter.setInsertionPointAfter(loop);
+  return output;
+}
+
 static mlir::Value buildConvolveSame(mlir::PatternRewriter &rewriter, mlir::Location loc,
                                      mlir::Value input, int64_t window) {
   auto type = llvm::cast<mlir::MemRefType>(input.getType());
@@ -122,8 +173,12 @@ struct RollingMeanLowering : mlir::OpRewritePattern<RollingMeanOp> {
 
   mlir::LogicalResult matchAndRewrite(RollingMeanOp op,
                                       mlir::PatternRewriter &rewriter) const override {
-    rewriter.replaceOp(op, buildConvolveSame(rewriter, op.getLoc(), op.getInput(),
-                                             op.getWindow()));
+    mlir::Value result = useIncremental(op.getIncrementalAttr())
+                             ? buildTrailingMean(rewriter, op.getLoc(), op.getInput(),
+                                                 op.getWindow())
+                             : buildConvolveSame(rewriter, op.getLoc(), op.getInput(),
+                                                 op.getWindow());
+    rewriter.replaceOp(op, result);
     return mlir::success();
   }
 };
@@ -346,6 +401,149 @@ struct CrossoverLowering : mlir::OpRewritePattern<CrossoverOp> {
   }
 };
 
+struct FusedRollingStatsLowering : mlir::OpRewritePattern<FusedRollingStatsOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  mlir::LogicalResult matchAndRewrite(FusedRollingStatsOp op,
+                                      mlir::PatternRewriter &rewriter) const override {
+    auto loc = op.getLoc();
+    int64_t window = op.getWindow();
+    auto type = llvm::cast<mlir::MemRefType>(op.getInput().getType());
+    const int64_t n = type.getDimSize(0);
+    auto f32 = rewriter.getF32Type();
+    if (useIncremental(op.getIncrementalAttr())) {
+      mlir::Value mean = buildTrailingMean(rewriter, loc, op.getInput(), window);
+      auto square = buildElementwiseUnary(rewriter, loc, op.getInput(),
+                                          [&](mlir::OpBuilder &b, mlir::Location l, mlir::Value v) {
+                                            return b.create<mlir::arith::MulFOp>(l, v, v);
+                                          });
+      mlir::Value meanSq = buildTrailingMean(rewriter, loc, square, window);
+      mlir::Value variance = buildElementwiseBinary(
+          rewriter, loc, meanSq, mean, [&](mlir::OpBuilder &b, mlir::Location l, mlir::Value msq,
+                                           mlir::Value mu) {
+            mlir::Value sq = b.create<mlir::arith::MulFOp>(l, mu, mu);
+            mlir::Value var = b.create<mlir::arith::SubFOp>(l, msq, sq);
+            auto z = b.create<mlir::arith::ConstantFloatOp>(l, mlir::FloatAttr::get(f32, 0.0));
+            auto pred = b.create<mlir::arith::CmpFOp>(l, mlir::arith::CmpFPredicate::OLT, var, z);
+            return b.create<mlir::arith::SelectOp>(l, pred, z, var);
+          });
+      mlir::Value stddev = buildElementwiseUnary(
+          rewriter, loc, variance, [&](mlir::OpBuilder &b, mlir::Location l, mlir::Value v) {
+            return b.create<mlir::arith::SqrtOp>(l, v);
+          });
+      rewriter.replaceOp(op, mlir::ValueRange{mean, stddev});
+      return mlir::success();
+    }
+
+    mlir::Value meanOut = allocLike(rewriter, loc, type);
+    mlir::Value stdOut = allocLike(rewriter, loc, type);
+    {
+      auto zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
+      auto one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
+      auto nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
+      auto wCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, window);
+      auto invW = rewriter.create<mlir::arith::ConstantFloatOp>(
+          loc, mlir::FloatAttr::get(f32, 1.0 / static_cast<double>(window)));
+      auto zeroF = rewriter.create<mlir::arith::ConstantFloatOp>(
+          loc, mlir::FloatAttr::get(f32, 0.0));
+
+      auto kLoop = rewriter.create<mlir::scf::ForOp>(loc, zero, nCst, one);
+      rewriter.setInsertionPointToStart(kLoop.getBody());
+      mlir::Value k = kLoop.getInductionVar();
+      mlir::Value sum = zeroF;
+      mlir::Value sumSq = zeroF;
+
+      auto iLoop = rewriter.create<mlir::scf::ForOp>(loc, zero, wCst, one,
+                                                     mlir::ValueRange{sum, sumSq});
+      rewriter.setInsertionPointToStart(iLoop.getBody());
+      mlir::Value i = iLoop.getInductionVar();
+      mlir::Value iterSum = iLoop.getRegionIterArgs()[0];
+      mlir::Value iterSumSq = iLoop.getRegionIterArgs()[1];
+      mlir::Value j = rewriter.create<mlir::arith::SubIOp>(loc, k, i);
+      auto jGe0 = rewriter.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sge, j,
+                                                       zero);
+      auto jLtN = rewriter.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, j,
+                                                       nCst);
+      auto inBounds = rewriter.create<mlir::arith::AndIOp>(loc, jGe0, jLtN);
+      auto ifOp = rewriter.create<mlir::scf::IfOp>(loc, mlir::TypeRange{f32, f32}, inBounds,
+                                                   /*withElseRegion=*/true);
+      rewriter.setInsertionPointToStart(&ifOp.getThenRegion().front());
+      mlir::Value sample = load(rewriter, loc, op.getInput(), j);
+      mlir::Value contrib = rewriter.create<mlir::arith::MulFOp>(loc, sample, invW);
+      mlir::Value contribSq = rewriter.create<mlir::arith::MulFOp>(loc, contrib, sample);
+      rewriter.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{contrib, contribSq});
+      rewriter.setInsertionPointToStart(&ifOp.getElseRegion().front());
+      rewriter.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{zeroF, zeroF});
+      rewriter.setInsertionPointAfter(ifOp);
+      mlir::Value nextSum =
+          rewriter.create<mlir::arith::AddFOp>(loc, iterSum, ifOp.getResult(0));
+      mlir::Value nextSumSq =
+          rewriter.create<mlir::arith::AddFOp>(loc, iterSumSq, ifOp.getResult(1));
+      rewriter.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{nextSum, nextSumSq});
+      rewriter.setInsertionPointAfter(iLoop);
+
+      mlir::Value mean = iLoop.getResult(0);
+      mlir::Value meanSq = iLoop.getResult(1);
+      mlir::Value sqMean = rewriter.create<mlir::arith::MulFOp>(loc, mean, mean);
+      mlir::Value var = rewriter.create<mlir::arith::SubFOp>(loc, meanSq, sqMean);
+      auto pred = rewriter.create<mlir::arith::CmpFOp>(loc, mlir::arith::CmpFPredicate::OLT, var,
+                                                       zeroF);
+      var = rewriter.create<mlir::arith::SelectOp>(loc, pred, zeroF, var);
+      mlir::Value stddev = rewriter.create<mlir::arith::SqrtOp>(loc, var);
+      store(rewriter, loc, mean, meanOut, k);
+      store(rewriter, loc, stddev, stdOut, k);
+      rewriter.setInsertionPointAfter(kLoop);
+    }
+
+    rewriter.replaceOp(op, mlir::ValueRange{meanOut, stdOut});
+    return mlir::success();
+  }
+};
+
+struct FusedRollingCovLowering : mlir::OpRewritePattern<FusedRollingCovOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  mlir::LogicalResult matchAndRewrite(FusedRollingCovOp op,
+                                      mlir::PatternRewriter &rewriter) const override {
+    auto loc = op.getLoc();
+    int64_t window = op.getWindow();
+    mlir::Value meanX = useIncremental(op.getIncrementalAttr())
+                            ? buildTrailingMean(rewriter, loc, op.getLhs(), window)
+                            : buildConvolveSame(rewriter, loc, op.getLhs(), window);
+    mlir::Value meanY = useIncremental(op.getIncrementalAttr())
+                            ? buildTrailingMean(rewriter, loc, op.getRhs(), window)
+                            : buildConvolveSame(rewriter, loc, op.getRhs(), window);
+    auto product = buildElementwiseBinary(
+        rewriter, loc, op.getLhs(), op.getRhs(),
+        [&](mlir::OpBuilder &b, mlir::Location l, mlir::Value x, mlir::Value y) {
+          return b.create<mlir::arith::MulFOp>(l, x, y);
+        });
+    mlir::Value meanXY = useIncremental(op.getIncrementalAttr())
+                             ? buildTrailingMean(rewriter, loc, product, window)
+                             : buildConvolveSame(rewriter, loc, product, window);
+
+    auto type = llvm::cast<mlir::MemRefType>(meanXY.getType());
+    const int64_t n = type.getDimSize(0);
+    mlir::Value output = allocLike(rewriter, loc, type);
+    auto zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
+    auto one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
+    auto nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
+    auto loop = rewriter.create<mlir::scf::ForOp>(loc, zero, nCst, one);
+    rewriter.setInsertionPointToStart(loop.getBody());
+    mlir::Value idx = loop.getInductionVar();
+    mlir::Value mxy = load(rewriter, loc, meanXY, idx);
+    mlir::Value mx = load(rewriter, loc, meanX, idx);
+    mlir::Value my = load(rewriter, loc, meanY, idx);
+    mlir::Value cov =
+        rewriter.create<mlir::arith::SubFOp>(loc, mxy,
+                                             rewriter.create<mlir::arith::MulFOp>(loc, mx, my));
+    store(rewriter, loc, cov, output, idx);
+    rewriter.setInsertionPointAfter(loop);
+    rewriter.replaceOp(op, output);
+    return mlir::success();
+  }
+};
+
 struct EmitLowering : mlir::OpRewritePattern<EmitOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -375,8 +573,8 @@ struct QFXToAffinePass : public mlir::PassWrapper<QFXToAffinePass, mlir::Operati
   void runOnOperation() override {
     mlir::RewritePatternSet patterns(&getContext());
     patterns.add<RollingMeanLowering, RollingStdLowering, RollingVwapLowering,
-                 RollingCovLowering, ZScoreLowering, EmaLowering, CrossoverLowering,
-                 EmitLowering>(&getContext());
+                 RollingCovLowering, FusedRollingStatsLowering, FusedRollingCovLowering,
+                 ZScoreLowering, EmaLowering, CrossoverLowering, EmitLowering>(&getContext());
     if (mlir::failed(mlir::applyPatternsAndFoldGreedily(getOperation(), std::move(patterns))))
       signalPassFailure();
   }

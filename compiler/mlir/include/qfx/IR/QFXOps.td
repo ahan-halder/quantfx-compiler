@@ -7,16 +7,18 @@ include "qfx/IR/QFXDialect.td"
 
 def QFX_RollingMeanOp : QFX_Op<"rolling_mean", [Pure]> {
   let summary = "Centered rolling mean (NumPy convolve same semantics)";
-  let arguments = (ins AnyMemRef:$input, I64Attr:$window);
+  let arguments = (ins AnyMemRef:$input, I64Attr:$window,
+                       OptionalAttr<UnitAttr>:$incremental);
   let results = (outs AnyMemRef:$output);
-  let assemblyFormat = "$input `,` `window` `=` $window attr-dict `:` type($input) `->` type($output)";
+  let assemblyFormat = "$input `,` `window` `=` $window (`incremental` $incremental^)? attr-dict `:` type($input) `->` type($output)";
 }
 
 def QFX_RollingStdOp : QFX_Op<"rolling_std", [Pure]> {
   let summary = "Centered rolling standard deviation";
-  let arguments = (ins AnyMemRef:$input, I64Attr:$window);
+  let arguments = (ins AnyMemRef:$input, I64Attr:$window,
+                       OptionalAttr<UnitAttr>:$incremental);
   let results = (outs AnyMemRef:$output);
-  let assemblyFormat = "$input `,` `window` `=` $window attr-dict `:` type($input) `->` type($output)";
+  let assemblyFormat = "$input `,` `window` `=` $window (`incremental` $incremental^)? attr-dict `:` type($input) `->` type($output)";
 }
 
 def QFX_RollingVwapOp : QFX_Op<"rolling_vwap", [Pure]> {
@@ -28,9 +30,10 @@ def QFX_RollingVwapOp : QFX_Op<"rolling_vwap", [Pure]> {
 
 def QFX_RollingCovOp : QFX_Op<"rolling_cov", [Pure]> {
   let summary = "Centered rolling covariance";
-  let arguments = (ins AnyMemRef:$lhs, AnyMemRef:$rhs, I64Attr:$window);
+  let arguments = (ins AnyMemRef:$lhs, AnyMemRef:$rhs, I64Attr:$window,
+                       OptionalAttr<UnitAttr>:$incremental);
   let results = (outs AnyMemRef:$output);
-  let assemblyFormat = "$lhs `,` $rhs `,` `window` `=` $window attr-dict `:` type($lhs) `,` type($rhs) `->` type($output)";
+  let assemblyFormat = "$lhs `,` $rhs `,` `window` `=` $window (`incremental` $incremental^)? attr-dict `:` type($lhs) `,` type($rhs) `->` type($output)";
 }
 
 def QFX_ZScoreOp : QFX_Op<"zscore", [Pure]> {
@@ -52,6 +55,22 @@ def QFX_CrossoverOp : QFX_Op<"crossover", [Pure]> {
   let arguments = (ins AnyMemRef:$lhs, AnyMemRef:$rhs);
   let results = (outs AnyMemRef:$output);
   let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($lhs) `,` type($rhs) `->` type($output)";
+}
+
+def QFX_FusedRollingStatsOp : QFX_Op<"fused_rolling_stats", [Pure]> {
+  let summary = "Fused rolling mean + std in a single window pass";
+  let arguments = (ins AnyMemRef:$input, I64Attr:$window,
+                       OptionalAttr<UnitAttr>:$incremental);
+  let results = (outs AnyMemRef:$mean, AnyMemRef:$stddev);
+  let assemblyFormat = "$input `,` `window` `=` $window (`incremental` $incremental^)? attr-dict `:` type($input) `->` type($mean) `,` type($stddev)";
+}
+
+def QFX_FusedRollingCovOp : QFX_Op<"fused_rolling_cov", [Pure]> {
+  let summary = "Fused rolling covariance (shared window accumulation)";
+  let arguments = (ins AnyMemRef:$lhs, AnyMemRef:$rhs, I64Attr:$window,
+                       OptionalAttr<UnitAttr>:$incremental);
+  let results = (outs AnyMemRef:$cov);
+  let assemblyFormat = "$lhs `,` $rhs `,` `window` `=` $window (`incremental` $incremental^)? attr-dict `:` type($lhs) `,` type($rhs) `->` type($cov)";
 }
 
 def QFX_EmitOp : QFX_Op<"emit", [MemoryEffects<[MemWrite]>]> {
