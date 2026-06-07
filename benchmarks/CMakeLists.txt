@@ -1,0 +1,2 @@
+add_executable(bench_rolling micro/bench_rolling.cpp)
+target_compile_features(bench_rolling PRIVATE cxx_std_20)
