@@ -6,6 +6,14 @@ cmake-build-*/
 *.a
 *.ptx
 *.cubin
+compile_commands.json
+
+# Standalone compiled binaries
+/run_stac_a2
+/bench_rolling
+
+# Generated benchmark data
+benchmarks/tick/lobster_sample.csv
 
 # Python
 .venv/
