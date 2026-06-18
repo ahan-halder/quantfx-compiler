@@ -15,8 +15,10 @@ jobs:
     - name: Set up dependencies
       run: |
         sudo apt-get update
-        # sudo apt-get install -y llvm-18 mlir-18-tools libmlir-18-dev
-        # NOTE: If llvm-18 is not available yet in the runner, use the appropriate version
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 18
+        sudo apt-get install -y mlir-18-tools libmlir-18-dev
         pip install pygad numpy pandas
 
     - name: Configure CMake
@@ -28,7 +30,7 @@ jobs:
     - name: Run Correctness Tests
       run: |
         cd tests
-        # python run_correctness.py
+        python run_correctness.py
 
     - name: Run Microbenchmarks
       run: |
