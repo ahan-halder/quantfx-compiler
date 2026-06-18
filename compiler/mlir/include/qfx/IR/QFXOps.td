@@ -3,7 +3,7 @@
 
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-include "qfx/IR/QFXDialect.td"
+include "QFXDialect.td"
 
 def QFX_RollingMeanOp : QFX_Op<"rolling_mean", [Pure]> {
   let summary = "Centered rolling mean (NumPy convolve same semantics)";
