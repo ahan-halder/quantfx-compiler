@@ -12,20 +12,36 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Set up dependencies
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install APT dependencies
       run: |
         sudo apt-get update
-        wget https://apt.llvm.org/llvm.sh
-        chmod +x llvm.sh
-        sudo ./llvm.sh 18
-        sudo apt-get install -y mlir-18-tools libmlir-18-dev
-        pip install pygad numpy pandas
+        sudo apt-get install -y llvm-18 mlir-18-tools libmlir-18-dev ccache
+
+    - name: Install Python dependencies
+      run: pip install pygad numpy pandas
+
+    - name: Setup ccache
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/ccache
+        key: ${{ runner.os }}-ccache-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-
 
     - name: Configure CMake
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
     - name: Build
-      run: cmake --build build -j $(nproc)
+      run: |
+        ccache -z
+        cmake --build build -j $(nproc)
+        ccache -s
 
     - name: Run Correctness Tests
       run: |
