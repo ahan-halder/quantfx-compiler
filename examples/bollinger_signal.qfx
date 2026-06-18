@@ -1,0 +1,10 @@
+# Bollinger band signal: buy when price drops below lower band
+import stream prices : f32[1024]
+
+let mu = rolling_mean(prices, window=20)
+let sigma = rolling_std(prices, window=20)
+
+# z-score measures distance from the mean in units of sigma
+let signal = zscore(prices, mu, sigma)
+
+emit signal : f32[1024]

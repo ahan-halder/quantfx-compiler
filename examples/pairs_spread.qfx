@@ -1,0 +1,11 @@
+# Pairs trading: detect divergence between two correlated instruments
+import stream prices_a : f32[1024]
+import stream prices_b : f32[1024]
+
+# Track rolling statistics of each leg
+let mu_a = rolling_mean(prices_a, window=50)
+let mu_b = rolling_mean(prices_b, window=50)
+let cov = rolling_cov(prices_a, prices_b, window=50)
+
+# Emit the rolling covariance as a spread signal
+emit cov : f32[1024]
