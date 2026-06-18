@@ -1,6 +1,7 @@
 include(TableGen)
 
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_CURRENT_SOURCE_DIR}/include/qfx/IR/QFXOps.td)
+list(APPEND MLIR_TABLEGEN_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 mlir_tablegen(QFXOps.h.inc -gen-op-decls)
 mlir_tablegen(QFXOps.cpp.inc -gen-op-defs)
