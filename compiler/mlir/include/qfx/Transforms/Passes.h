@@ -2,6 +2,7 @@
 
 #include "qfx/Transforms/CompilerConfig.h"
 
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 
 namespace qfx {
