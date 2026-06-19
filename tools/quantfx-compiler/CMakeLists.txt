@@ -6,6 +6,7 @@ add_executable(quantfx-compiler main.cpp Benchmark.cpp)
 target_include_directories(quantfx-compiler PRIVATE
   ${PROJECT_SOURCE_DIR}/compiler/frontend
   ${PROJECT_SOURCE_DIR}/compiler/mlir/include
+  ${PROJECT_BINARY_DIR}/compiler/mlir
   ${PROJECT_SOURCE_DIR}/compiler/backend/gpu
 )
 

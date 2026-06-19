@@ -2,6 +2,8 @@
 
 #include "HIR.h"
 
+#include "mlir/Support/LogicalResult.h"
+
 #include <string>
 
 namespace qfx {

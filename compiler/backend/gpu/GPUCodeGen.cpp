@@ -36,7 +36,7 @@ std::string kernelBody(const HirModule &hir) {
 
   bool emitsCov = false;
   for (const auto &binding : hir.bindings) {
-    if (binding.op == HirOp::RollingCov || binding.op == HirOp::FusedRollingCov)
+    if (binding.op == HirOp::RollingCov)
       emitsCov = true;
   }
 
@@ -114,8 +114,8 @@ mlir::LogicalResult emitCudaKernel(const HirModule &hir, const std::string &outp
   if (!emitPtx)
     return mlir::success();
 
-  std::string error;
-  if (!llvm::sys::findProgramByName("nvcc", error)) {
+  auto nvccPath = llvm::sys::findProgramByName("nvcc");
+  if (!nvccPath) {
     llvm::errs() << "nvcc not found; wrote CUDA source to " << cuPath << "\n";
     return mlir::success();
   }
