@@ -72,12 +72,12 @@ mlir::ModuleOp lowerHirToMLIR(mlir::MLIRContext &context, const HirModule &hir) 
     case HirOp::RollingMean:
       result = builder.create<RollingMeanOp>(
           loc, memrefType, lookup(binding.operands[0]),
-          builder.getI64IntegerAttr(binding.window));
+          builder.getI64IntegerAttr(binding.window), mlir::UnitAttr());
       break;
     case HirOp::RollingStd:
       result = builder.create<RollingStdOp>(
           loc, memrefType, lookup(binding.operands[0]),
-          builder.getI64IntegerAttr(binding.window));
+          builder.getI64IntegerAttr(binding.window), mlir::UnitAttr());
       break;
     case HirOp::RollingVwap:
       result = builder.create<RollingVwapOp>(
@@ -89,7 +89,7 @@ mlir::ModuleOp lowerHirToMLIR(mlir::MLIRContext &context, const HirModule &hir) 
       result = builder.create<RollingCovOp>(
           loc, memrefType, lookup(binding.operands[0]),
           lookup(binding.operands[1]),
-          builder.getI64IntegerAttr(binding.window));
+          builder.getI64IntegerAttr(binding.window), mlir::UnitAttr());
       break;
     case HirOp::ZScore:
       result = builder.create<ZScoreOp>(
