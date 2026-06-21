@@ -26,6 +26,10 @@ target_include_directories(QFXDialect PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${CMAKE_CURRENT_BINARY_DIR}
 )
+target_include_directories(obj.QFXDialect PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_BINARY_DIR}
+)
 
 add_mlir_library(QFXTransforms
   lib/Transforms/WindowFusion.cpp
@@ -86,8 +90,17 @@ target_include_directories(QFXConversion PUBLIC
   ${CMAKE_CURRENT_BINARY_DIR}
   ${PROJECT_SOURCE_DIR}/compiler/frontend
 )
+target_include_directories(obj.QFXConversion PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_BINARY_DIR}
+  ${PROJECT_SOURCE_DIR}/compiler/frontend
+)
 
 target_include_directories(QFXTransforms PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_BINARY_DIR}
+)
+target_include_directories(obj.QFXTransforms PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${CMAKE_CURRENT_BINARY_DIR}
 )
