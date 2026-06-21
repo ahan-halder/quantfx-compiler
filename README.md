@@ -3,7 +3,7 @@
 > **A self-tuning MLIR compiler pipeline for real-time financial analytics — where the compiler learns to optimize itself.**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Build](https://img.shields.io/badge/build-passing-brightgreen)]()
+
 [![LLVM](https://img.shields.io/badge/LLVM-18+-orange)]()
 [![CUDA](https://img.shields.io/badge/CUDA-12.x-76b900)]()
 [![Language](https://img.shields.io/badge/language-C%2B%2B20%20%7C%20Python-informational)]()
@@ -241,7 +241,7 @@ quantfx-compiler/
 ├── scripts/
 │   ├── setup-deps.sh       # Dependency installation
 │   └── generate_lobster.py # Synthetic tick data generator
-├── .github/workflows/ci.yml
+
 ├── CONTRIBUTING.md
 ├── CMakeLists.txt
 └── README.md
@@ -373,7 +373,7 @@ python scripts/generate_lobster.py benchmarks/tick/lobster_sample.csv 100000
 - [x] `docs/dsl_spec.md` (full language reference)
 - [x] `docs/mlir_dialect.md` (op semantics, lowering strategy)
 - [x] `docs/tuner_design.md` (GA design, fitness function, results)
-- [x] CI pipeline (GitHub Actions): build, correctness tests, micro-benchmarks
+
 - [x] Performance comparison writeup: vs NumPy, vs hand-written CUDA, vs TVM
 
 ---
