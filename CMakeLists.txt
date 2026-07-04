@@ -28,6 +28,8 @@ set(MLIR_DIR "${LLVM_CMAKE_DIR}/../mlir" CACHE PATH "MLIR CMake config directory
 find_package(LLVM REQUIRED CONFIG)
 find_package(MLIR REQUIRED CONFIG)
 
+set(LLVM_LINK_LLVM_DYLIB ON)
+
 message(STATUS "LLVM version: ${LLVM_PACKAGE_VERSION}")
 message(STATUS "MLIR_DIR: ${MLIR_DIR}")
 

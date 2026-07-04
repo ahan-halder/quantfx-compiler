@@ -11,13 +11,14 @@ target_include_directories(quantfx-compiler PRIVATE
 )
 
 set(LIBS
-  ${dialect_libs}
-  ${conversion_libs}
   QFXConversion
   QFXTransforms
   QFXDialect
   qfxFrontend
   qfxGPU
+  ${dialect_libs}
+  ${conversion_libs}
+  MLIRToLLVMIRTranslationRegistration
   MLIRExecutionEngine
   MLIRLLVMToLLVMIRTranslation
   MLIRTargetLLVMIRExport
@@ -25,18 +26,7 @@ set(LIBS
   MLIRSupport
 )
 
-set(LLVM_LINK_COMPONENTS
-  Core
-  Native
-  NativeCodeGen
-  Support
-  Target
-  AArch64CodeGen
-  X86CodeGen
-)
-
-llvm_config(quantfx-compiler ${LLVM_LINK_COMPONENTS})
-target_link_libraries(quantfx-compiler PRIVATE ${LIBS})
+target_link_libraries(quantfx-compiler PRIVATE ${LIBS} LLVM)
 
 llvm_update_compile_flags(quantfx-compiler)
 mlir_check_all_link_libraries(quantfx-compiler)

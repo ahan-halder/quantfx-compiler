@@ -68,6 +68,7 @@ add_mlir_library(QFXConversion
   MLIRFuncDialect
   MLIRMemRefDialect
   MLIRArithDialect
+  MLIRMathDialect
   MLIRSCFDialect
   MLIRVectorDialect
   MLIRVectorToLLVM
@@ -76,9 +77,11 @@ add_mlir_library(QFXConversion
   MLIRMemRefToLLVM
   MLIRFuncToLLVM
   MLIRArithToLLVM
+  MLIRMathToLLVM
   MLIRIndexToLLVM
   MLIRControlFlowToLLVM
   MLIRReconcileUnrealizedCasts
+  MLIRToLLVMIRTranslationRegistration
   MLIRLLVMToLLVMIRTranslation
   MLIRTargetLLVMIRExport
   MLIRPass
