@@ -4,6 +4,7 @@
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/ExecutionEngine/OptUtils.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "llvm/Support/Error.h"
 
 #include <algorithm>
 #include <chrono>
@@ -52,8 +53,11 @@ bool runBenchmark(mlir::ModuleOp module, const HirModule &hir, const CompilerCon
   mlir::ExecutionEngineOptions options;
   options.jitCodeGenOptLevel = mapCodegenOpt(config.llvmCodegenOpt);
   auto engine = mlir::ExecutionEngine::create(module, options);
-  if (!engine)
+  if (!engine) {
+    llvm::errs() << "benchmark failed to create execution engine: "
+                 << llvm::toString(engine.takeError()) << "\n";
     return false;
+  }
 
   const int64_t n = hir.imports.front().type.length;
   std::vector<float> prices(n), volumes(n);
@@ -93,14 +97,22 @@ bool runBenchmark(mlir::ModuleOp module, const HirModule &hir, const CompilerCon
   for (auto &out : outputs)
     outputRefs.push_back(makeRef(out));
 
-  std::vector<void *> args;
+  std::vector<StridedMemRefType<float, 1> *> refPtrs;
   for (auto &ref : importRefs)
-    args.push_back(&ref);
+    refPtrs.push_back(&ref);
   for (auto &ref : outputRefs)
-    args.push_back(&ref);
+    refPtrs.push_back(&ref);
+
+  std::vector<void *> args;
+  for (auto &ptr : refPtrs)
+    args.push_back(&ptr);
 
   auto invokeOnce = [&]() -> bool {
-    return mlir::succeeded((*engine)->invoke("qfx_kernel", args));
+    if (auto err = (*engine)->invokePacked("_mlir_ciface_qfx_kernel", args)) {
+      llvm::consumeError(std::move(err));
+      return false;
+    }
+    return true;
   };
 
   for (int i = 0; i < warmupIters; ++i) {

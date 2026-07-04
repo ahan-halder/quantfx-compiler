@@ -18,9 +18,12 @@
 #include "mlir/Support/FileUtilities.h"
 
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/InitLLVM.h"
+#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <unordered_map>
@@ -50,8 +53,22 @@ static llvm::cl::opt<bool> enableVectorize("vectorize", llvm::cl::desc("Enable v
 static llvm::cl::opt<int> tileSize("tile-size", llvm::cl::desc("Loop tile size"), llvm::cl::init(64));
 static llvm::cl::opt<int> vectorWidth("vector-width", llvm::cl::desc("Vector width (f32 lanes)"),
                                        llvm::cl::init(16));
-static llvm::cl::opt<int> prefetchDistance("prefetch-distance", llvm::cl::desc("Prefetch distance"),
-                                           llvm::cl::init(8));
+static int prefetchDistanceVal = 8;
+
+static void parsePrefetchDistance(int argc, char **argv) {
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+    if (arg.rfind("--prefetch-distance=", 0) == 0) {
+      prefetchDistanceVal = std::atoi(arg.c_str() + 20);
+    } else if (arg.rfind("-prefetch-distance=", 0) == 0) {
+      prefetchDistanceVal = std::atoi(arg.c_str() + 19);
+    } else if (arg == "--prefetch-distance" || arg == "-prefetch-distance") {
+      if (i + 1 < argc) {
+        prefetchDistanceVal = std::atoi(argv[i + 1]);
+      }
+    }
+  }
+}
 static llvm::cl::opt<int> llvmCodegenOpt("llvm-codegen-opt",
                                          llvm::cl::desc("LLVM JIT codegen opt (0-3)"),
                                          llvm::cl::init(3));
@@ -64,7 +81,7 @@ static std::string readFile(const std::string &path) {
   auto file = mlir::openInputFile(path);
   if (!file)
     return {};
-  return (*file)->getBuffer().str();
+  return file->getBuffer().str();
 }
 
 static CompilerConfig buildConfig() {
@@ -85,7 +102,7 @@ static CompilerConfig buildConfig() {
   config.vectorize = enableVectorize;
   config.tileSize = tileSize;
   config.vectorWidth = vectorWidth;
-  config.prefetchDistance = prefetchDistance;
+  config.prefetchDistance = prefetchDistanceVal;
   config.llvmCodegenOpt = llvmCodegenOpt;
   return config;
 }
@@ -95,12 +112,7 @@ static int compileQfx(const std::string &source, const std::string &outPath) {
   Lexer lexer(source);
   Parser parser(lexer);
   std::unique_ptr<Module> ast;
-  try {
-    ast = parser.parseModule(error);
-  } catch (const std::exception &ex) {
-    llvm::errs() << "parse error: " << ex.what() << "\n";
-    return 1;
-  }
+  ast = parser.parseModule(error);
   if (!ast) {
     llvm::errs() << "parse error: " << error << "\n";
     return 1;
@@ -174,7 +186,8 @@ static int compileQfx(const std::string &source, const std::string &outPath) {
     options.jitCodeGenOptLevel = llvm::CodeGenOptLevel::Aggressive;
     auto engine = mlir::ExecutionEngine::create(module, options);
     if (!engine) {
-      llvm::errs() << "failed to create execution engine\n";
+      llvm::errs() << "failed to create execution engine: "
+                   << llvm::toString(engine.takeError()) << "\n";
       return 1;
     }
 
@@ -223,14 +236,18 @@ static int compileQfx(const std::string &source, const std::string &outPath) {
     for (auto &out : outputs)
       outputRefs.push_back(makeRef(out));
 
-    std::vector<void *> args;
+    std::vector<StridedMemRefType<float, 1> *> refPtrs;
     for (auto &ref : importRefs)
-      args.push_back(&ref);
+      refPtrs.push_back(&ref);
     for (auto &ref : outputRefs)
-      args.push_back(&ref);
+      refPtrs.push_back(&ref);
 
-    if (mlir::failed((*engine)->invoke("qfx_kernel", args))) {
-      llvm::errs() << "kernel execution failed\n";
+    std::vector<void *> args;
+    for (auto &ptr : refPtrs)
+      args.push_back(&ptr);
+
+    if (auto err = (*engine)->invokePacked("_mlir_ciface_qfx_kernel", args)) {
+      llvm::errs() << "kernel execution failed: " << llvm::toString(std::move(err)) << "\n";
       return 1;
     }
 
@@ -262,6 +279,10 @@ static int compileQfx(const std::string &source, const std::string &outPath) {
 
 int main(int argc, char **argv) {
   llvm::InitLLVM y(argc, argv);
+  llvm::InitializeNativeTarget();
+  llvm::InitializeNativeTargetAsmPrinter();
+  llvm::InitializeNativeTargetAsmParser();
+  parsePrefetchDistance(argc, argv);
   llvm::cl::ParseCommandLineOptions(argc, argv, "quantfx compiler\n");
 
   std::string source = readFile(inputFilename);
