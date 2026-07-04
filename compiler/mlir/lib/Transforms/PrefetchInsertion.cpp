@@ -11,14 +11,14 @@ namespace qfx {
 namespace {
 
 struct PrefetchInsertionPass
-    : public mlir::PassWrapper<PrefetchInsertionPass, mlir::OperationPass<mlir::func::FuncOp>> {
+    : public mlir::PassWrapper<PrefetchInsertionPass, mlir::OperationPass<>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PrefetchInsertionPass)
 
   explicit PrefetchInsertionPass(int64_t dist) : distance(dist) {}
 
   void runOnOperation() override {
     mlir::OpBuilder builder(&getContext());
-    getOperation().walk([&](mlir::memref::LoadOp load) {
+    getOperation()->walk([&](mlir::memref::LoadOp load) {
       auto loop = load->getParentOfType<mlir::scf::ForOp>();
       if (!loop)
         return;

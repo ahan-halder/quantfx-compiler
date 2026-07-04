@@ -63,7 +63,7 @@ mlir::LogicalResult emitObjectFile(mlir::ModuleOp module, mlir::MLIRContext &con
 
   llvm::legacy::PassManager passManager;
   if (machine->addPassesToEmitFile(passManager, dest, nullptr,
-                                   llvm::CGFT_ObjectFile)) {
+                                   llvm::CodeGenFileType::ObjectFile)) {
     return mlir::failure();
   }
   passManager.run(*llvmModule);

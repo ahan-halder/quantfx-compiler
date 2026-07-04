@@ -23,7 +23,7 @@ struct MarkIncrementalPattern : mlir::OpRewritePattern<OpTy> {
 };
 
 struct SlidingWindowUpdatePass
-    : public mlir::PassWrapper<SlidingWindowUpdatePass, mlir::OperationPass<mlir::func::FuncOp>> {
+    : public mlir::PassWrapper<SlidingWindowUpdatePass, mlir::OperationPass<>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(SlidingWindowUpdatePass)
 
   void runOnOperation() override {

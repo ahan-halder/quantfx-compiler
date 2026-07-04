@@ -8,13 +8,17 @@
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
+#include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
 #include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
+#include "mlir/Conversion/Passes.h"
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Conversion/VectorToLLVM/ConvertVectorToLLVM.h"
+#include "mlir/Dialect/MemRef/Transforms/Passes.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
@@ -42,8 +46,8 @@ mlir::LogicalResult runCPUPipeline(mlir::ModuleOp module, mlir::MLIRContext &con
                                    const CompilerConfig &config) {
   mlir::DialectRegistry registry;
   registry.insert<mlir::func::FuncDialect, mlir::memref::MemRefDialect,
-                  mlir::arith::ArithDialect, mlir::scf::SCFDialect, mlir::vector::VectorDialect,
-                  mlir::LLVM::LLVMDialect>();
+                  mlir::arith::ArithDialect, mlir::math::MathDialect, mlir::scf::SCFDialect,
+                  mlir::vector::VectorDialect, mlir::LLVM::LLVMDialect>();
   mlir::registerAllToLLVMIRTranslations(registry);
   context.appendDialectRegistry(registry);
   context.loadAllAvailableDialects();
@@ -57,8 +61,9 @@ mlir::LogicalResult runCPUPipeline(mlir::ModuleOp module, mlir::MLIRContext &con
   pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass());
   pm.addPass(mlir::createConvertFuncToLLVMPass());
   pm.addPass(mlir::createArithToLLVMConversionPass());
+  pm.addPass(mlir::createConvertMathToLLVMPass());
   pm.addPass(mlir::createConvertIndexToLLVMPass());
-  pm.addPass(mlir::createCFToLLVMConversionPass());
+  pm.addPass(mlir::createConvertControlFlowToLLVMPass());
   pm.addPass(mlir::createReconcileUnrealizedCastsPass());
 
   return pm.run(module);

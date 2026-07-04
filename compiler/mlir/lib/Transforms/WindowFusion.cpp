@@ -55,7 +55,7 @@ struct FuseRollingCovPattern : mlir::OpRewritePattern<RollingCovOp> {
 };
 
 struct WindowFusionPass
-    : public mlir::PassWrapper<WindowFusionPass, mlir::OperationPass<mlir::func::FuncOp>> {
+    : public mlir::PassWrapper<WindowFusionPass, mlir::OperationPass<>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(WindowFusionPass)
 
   void runOnOperation() override {

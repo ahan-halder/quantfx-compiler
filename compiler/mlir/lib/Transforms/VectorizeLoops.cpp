@@ -66,7 +66,7 @@ struct VectorizeSimpleLoopPattern : mlir::OpRewritePattern<mlir::scf::ForOp> {
 };
 
 struct VectorizeLoopsPass
-    : public mlir::PassWrapper<VectorizeLoopsPass, mlir::OperationPass<mlir::func::FuncOp>> {
+    : public mlir::PassWrapper<VectorizeLoopsPass, mlir::OperationPass<>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(VectorizeLoopsPass)
 
   explicit VectorizeLoopsPass(int64_t width) : vectorWidth(width) {}

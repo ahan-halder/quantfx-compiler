@@ -10,13 +10,13 @@ namespace qfx {
 namespace {
 
 struct LoopTilingPass
-    : public mlir::PassWrapper<LoopTilingPass, mlir::OperationPass<mlir::func::FuncOp>> {
+    : public mlir::PassWrapper<LoopTilingPass, mlir::OperationPass<>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LoopTilingPass)
 
   explicit LoopTilingPass(int64_t tileSize) : tileSize(tileSize) {}
 
   void runOnOperation() override {
-  getOperation().walk([&](mlir::scf::ForOp loop) {
+    getOperation()->walk([&](mlir::scf::ForOp loop) {
       auto lb = loop.getLowerBound().getDefiningOp<mlir::arith::ConstantIndexOp>();
       auto ub = loop.getUpperBound().getDefiningOp<mlir::arith::ConstantIndexOp>();
       if (!lb || !ub)
