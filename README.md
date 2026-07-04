@@ -210,6 +210,8 @@ quantfx-compiler/
 │   │   ├── cpu/            # LLVM IR → AVX-512 codegen
 │   │   └── gpu/            # CUDA source generation, nvcc PTX compilation
 │   └── jit/                # ORC JIT for interactive use (placeholder)
+├── tools/
+│   └── quantfx-compiler/   # Main compiler CLI driver and benchmark wrapper
 ├── tuner/
 │   ├── search.py           # Genetic algorithm engine (pygad)
 │   ├── chromosome.py       # Gene encoding/decoding
@@ -217,6 +219,7 @@ quantfx-compiler/
 │   ├── harness.py          # Compile-and-benchmark subprocess driver
 │   ├── harness.cpp         # C++ benchmark harness
 │   ├── pareto.py           # Pareto front tracking
+│   ├── cache_db.py         # SQLite config cache management
 │   └── cache/              # SQLite config cache
 ├── runtime/
 │   ├── cpu_rt/             # Lock-free ring buffer, mlockall, thread pinning
@@ -237,13 +240,15 @@ quantfx-compiler/
 │   ├── mlir_dialect.md     # Op semantics and lowering strategy
 │   ├── tuner_design.md     # GA design and results
 │   ├── performance.md      # Performance comparison writeup
-│   └── optimization_passes.md
+│   ├── optimization_passes.md
+│   ├── testing_guide.md    # Beginner setup and testing guide
+│   └── testing_instructions.md # Quick reference commands
 ├── scripts/
 │   ├── setup-deps.sh       # Dependency installation
 │   └── generate_lobster.py # Synthetic tick data generator
-
-├── CONTRIBUTING.md
 ├── CMakeLists.txt
+├── LICENSE
+├── requirements.txt
 └── README.md
 ```
 
@@ -279,22 +284,22 @@ make -j$(nproc)
 
 ```bash
 # Compile to CPU binary
-./quantfx-compiler examples/vwap_signal.qfx --target cpu -o vwap.o
+./build/tools/quantfx-compiler/quantfx-compiler examples/vwap_signal.qfx --target cpu -o vwap.o
 
 # Compile to GPU (PTX)
-./quantfx-compiler examples/vwap_signal.qfx --target cuda -o vwap.ptx
+./build/tools/quantfx-compiler/quantfx-compiler examples/vwap_signal.qfx --target cuda -o vwap.ptx
 
 # Dump intermediate MLIR
-./quantfx-compiler examples/vwap_signal.qfx --emit-mlir
+./build/tools/quantfx-compiler/quantfx-compiler examples/vwap_signal.qfx --emit-mlir
 
 # Dump LLVM IR
-./quantfx-compiler examples/vwap_signal.qfx --emit-llvm -o vwap.ll
+./build/tools/quantfx-compiler/quantfx-compiler examples/vwap_signal.qfx --emit-llvm -o vwap.ll
 
 # JIT-verify correctness on synthetic data
-./quantfx-compiler examples/vwap_signal.qfx --verify
+./build/tools/quantfx-compiler/quantfx-compiler examples/vwap_signal.qfx --verify
 
 # JIT benchmark (JSON output)
-./quantfx-compiler examples/vwap_signal.qfx --benchmark --bench-warmup 100 --bench-iters 1000
+./build/tools/quantfx-compiler/quantfx-compiler examples/vwap_signal.qfx --benchmark --bench-warmup 100 --bench-iters 1000
 ```
 
 ### Run the Auto-Tuner
@@ -317,16 +322,16 @@ python tuner/search.py --report --cache tuner/cache/results.db
 
 ```bash
 # Correctness tests (compare all ops vs NumPy)
-cd tests && python run_correctness.py
+python tests/run_correctness.py
 
 # Microbenchmarks (isolated kernels)
-./build/bench_rolling --n 10000 --window 20 --iters 10000
+./build/benchmarks/bench_rolling --n 10000 --window 20 --iters 10000
 
 # Generate synthetic tick data
 python scripts/generate_lobster.py benchmarks/tick/lobster_sample.csv 100000
 
 # Full STAC-A2 streaming benchmark
-./build/run_stac_a2 --data benchmarks/tick/lobster_sample.csv
+./build/benchmarks/run_stac_a2 --data benchmarks/tick/lobster_sample.csv
 ```
 
 ---
@@ -406,12 +411,6 @@ Most prior work either builds a DSL **or** auto-tunes a compiler — this projec
 
 ---
 
-## Resume Bullet
-
-> Designed and built `quantfx-compiler`, an MLIR/LLVM compiler toolchain for real-time financial time-series analytics featuring a custom DSL, novel window-fusion pass, and genetic auto-tuner over the MLIR pass pipeline; achieved 37ns median (73ns full-chain) per-tick streaming latency on STAC-A2 workloads with <1.5× p99/median jitter ratio, and ≥13× batch speedup over NumPy baselines.
-
----
-
 ## References
 
 - [MLIR Documentation](https://mlir.llvm.org/)
@@ -421,16 +420,6 @@ Most prior work either builds a DSL **or** auto-tunes a compiler — this projec
 - [Mojo: MLIR-Based HPC Kernels](https://arxiv.org/abs/2509.21039)
 - [Databento: Kernel Bypass in Trading](https://databento.com/microstructure/kernel-bypass)
 - [LOBSTER Limit Order Book Data](https://lobsterdata.com/)
-
----
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding conventions, and how to add new DSL operations.
-
-## License
-
-Apache 2.0 — see [LICENSE](LICENSE).
 
 ---
 
