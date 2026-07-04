@@ -43,6 +43,7 @@ include_directories(${MLIR_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 
 add_subdirectory(compiler)
+add_subdirectory(runtime)
 add_subdirectory(tools)
 add_subdirectory(benchmarks)
 add_subdirectory(tuner)
