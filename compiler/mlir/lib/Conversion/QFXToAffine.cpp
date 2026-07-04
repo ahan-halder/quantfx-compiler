@@ -3,11 +3,13 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace qfx {
 namespace {
@@ -36,11 +38,11 @@ static mlir::Value buildTrailingMean(mlir::PatternRewriter &rewriter, mlir::Loca
   auto f32 = rewriter.getF32Type();
   mlir::Value output = allocLike(rewriter, loc, type);
 
-  auto zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
-  auto one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
-  auto nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
-  auto wCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, window);
-  auto zeroF = rewriter.create<mlir::arith::ConstantFloatOp>(
+  mlir::Value zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
+  mlir::Value one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
+  mlir::Value nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
+  mlir::Value wCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, window);
+  mlir::Value zeroF = rewriter.create<mlir::arith::ConstantOp>(
       loc, mlir::FloatAttr::get(f32, 0.0));
 
   auto loop = rewriter.create<mlir::scf::ForOp>(loc, zero, nCst, one, zeroF);
@@ -85,13 +87,13 @@ static mlir::Value buildConvolveSame(mlir::PatternRewriter &rewriter, mlir::Loca
   auto f32 = rewriter.getF32Type();
   mlir::Value output = allocLike(rewriter, loc, type);
 
-  auto zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
-  auto one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
-  auto nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
-  auto wCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, window);
-  auto invW = rewriter.create<mlir::arith::ConstantFloatOp>(
+  mlir::Value zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
+  mlir::Value one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
+  mlir::Value nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
+  mlir::Value wCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, window);
+  mlir::Value invW = rewriter.create<mlir::arith::ConstantOp>(
       loc, mlir::FloatAttr::get(f32, 1.0 / static_cast<double>(window)));
-  auto zeroF = rewriter.create<mlir::arith::ConstantFloatOp>(
+  mlir::Value zeroF = rewriter.create<mlir::arith::ConstantOp>(
       loc, mlir::FloatAttr::get(f32, 0.0));
 
   auto kLoop = rewriter.create<mlir::scf::ForOp>(loc, zero, nCst, one);
@@ -104,7 +106,9 @@ static mlir::Value buildConvolveSame(mlir::PatternRewriter &rewriter, mlir::Loca
   mlir::Value i = iLoop.getInductionVar();
   mlir::Value iterSum = iLoop.getRegionIterArgs()[0];
 
-  mlir::Value j = rewriter.create<mlir::arith::SubIOp>(loc, k, i);
+  mlir::Value padCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, (window - 1) / 2);
+  mlir::Value kPlusPad = rewriter.create<mlir::arith::AddIOp>(loc, k, padCst);
+  mlir::Value j = rewriter.create<mlir::arith::SubIOp>(loc, kPlusPad, i);
   auto jGe0 = rewriter.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sge, j,
                                                    zero);
   auto jLtN = rewriter.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, j,
@@ -142,9 +146,9 @@ static mlir::Value buildElementwiseBinary(
   auto type = llvm::cast<mlir::MemRefType>(lhs.getType());
   const int64_t n = type.getDimSize(0);
   mlir::Value output = allocLike(rewriter, loc, type);
-  auto zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
-  auto one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
-  auto nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
+  mlir::Value zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
+  mlir::Value one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
+  mlir::Value nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
 
   auto loop = rewriter.create<mlir::scf::ForOp>(loc, zero, nCst, one);
   rewriter.setInsertionPointToStart(loop.getBody());
@@ -205,7 +209,7 @@ struct RollingStdLowering : mlir::OpRewritePattern<RollingStdOp> {
                                           mlir::Value mu) {
           mlir::Value sq = b.create<mlir::arith::MulFOp>(l, mu, mu);
           mlir::Value var = b.create<mlir::arith::SubFOp>(l, msq, sq);
-          auto zero = b.create<mlir::arith::ConstantFloatOp>(
+          mlir::Value zero = b.create<mlir::arith::ConstantOp>(
               l, mlir::FloatAttr::get(f32, 0.0));
           auto pred = b.create<mlir::arith::CmpFOp>(l, mlir::arith::CmpFPredicate::OLT, var,
                                                     zero);
@@ -214,7 +218,7 @@ struct RollingStdLowering : mlir::OpRewritePattern<RollingStdOp> {
 
     mlir::Value stddev = buildElementwiseUnary(
         rewriter, loc, variance, [&](mlir::OpBuilder &b, mlir::Location l, mlir::Value v) {
-          return b.create<mlir::arith::SqrtOp>(l, v);
+          return b.create<mlir::math::SqrtOp>(l, v);
         });
     rewriter.replaceOp(op, stddev);
     return mlir::success();
@@ -240,7 +244,7 @@ struct RollingVwapLowering : mlir::OpRewritePattern<RollingVwapOp> {
     mlir::Value result = buildElementwiseBinary(
         rewriter, loc, num, den, [&](mlir::OpBuilder &b, mlir::Location l, mlir::Value n,
                                      mlir::Value d) {
-          auto eps = b.create<mlir::arith::ConstantFloatOp>(
+          mlir::Value eps = b.create<mlir::arith::ConstantOp>(
               l, mlir::FloatAttr::get(f32, 1e-8));
           auto pred = b.create<mlir::arith::CmpFOp>(l, mlir::arith::CmpFPredicate::OLT, d, eps);
           auto safeDen = b.create<mlir::arith::SelectOp>(l, pred, eps, d);
@@ -270,9 +274,9 @@ struct RollingCovLowering : mlir::OpRewritePattern<RollingCovOp> {
     auto type = llvm::cast<mlir::MemRefType>(meanXY.getType());
     const int64_t n = type.getDimSize(0);
     mlir::Value output = allocLike(rewriter, loc, type);
-    auto zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
-    auto one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
-    auto nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
+    mlir::Value zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
+    mlir::Value one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
+    mlir::Value nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
     auto loop = rewriter.create<mlir::scf::ForOp>(loc, zero, nCst, one);
     rewriter.setInsertionPointToStart(loop.getBody());
     mlir::Value idx = loop.getInductionVar();
@@ -299,10 +303,10 @@ struct ZScoreLowering : mlir::OpRewritePattern<ZScoreOp> {
     auto type = llvm::cast<mlir::MemRefType>(op.getInput().getType());
     const int64_t n = type.getDimSize(0);
     mlir::Value output = allocLike(rewriter, loc, type);
-    auto zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
-    auto one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
-    auto nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
-    auto eps = rewriter.create<mlir::arith::ConstantFloatOp>(
+    mlir::Value zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
+    mlir::Value one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
+    mlir::Value nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
+    mlir::Value eps = rewriter.create<mlir::arith::ConstantOp>(
         loc, mlir::FloatAttr::get(f32, 1e-8));
 
     auto loop = rewriter.create<mlir::scf::ForOp>(loc, zero, nCst, one);
@@ -333,13 +337,13 @@ struct EmaLowering : mlir::OpRewritePattern<EmaOp> {
     auto type = llvm::cast<mlir::MemRefType>(op.getInput().getType());
     const int64_t n = type.getDimSize(0);
     mlir::Value output = allocLike(rewriter, loc, type);
-    auto zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
-    auto one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
-    auto nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
-    auto alpha = rewriter.create<mlir::arith::ConstantFloatOp>(
+    mlir::Value zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
+    mlir::Value one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
+    mlir::Value nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
+    mlir::Value alpha = rewriter.create<mlir::arith::ConstantOp>(
         loc, mlir::FloatAttr::get(f32, op.getAlpha()));
-    auto oneMinusAlpha = rewriter.create<mlir::arith::SubFOp>(
-        loc, rewriter.create<mlir::arith::ConstantFloatOp>(loc, mlir::FloatAttr::get(f32, 1.0)),
+    mlir::Value oneMinusAlpha = rewriter.create<mlir::arith::SubFOp>(
+        loc, rewriter.create<mlir::arith::ConstantOp>(loc, mlir::FloatAttr::get(f32, 1.0)),
         alpha);
 
     mlir::Value x0 = load(rewriter, loc, op.getInput(), zero);
@@ -371,12 +375,12 @@ struct CrossoverLowering : mlir::OpRewritePattern<CrossoverOp> {
     auto type = llvm::cast<mlir::MemRefType>(op.getLhs().getType());
     const int64_t n = type.getDimSize(0);
     mlir::Value output = allocLike(rewriter, loc, type);
-    auto zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
-    auto one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
-    auto nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
-    auto zeroF = rewriter.create<mlir::arith::ConstantFloatOp>(
+    mlir::Value zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
+    mlir::Value one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
+    mlir::Value nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
+    mlir::Value zeroF = rewriter.create<mlir::arith::ConstantOp>(
         loc, mlir::FloatAttr::get(f32, 0.0));
-    auto oneF = rewriter.create<mlir::arith::ConstantFloatOp>(
+    mlir::Value oneF = rewriter.create<mlir::arith::ConstantOp>(
         loc, mlir::FloatAttr::get(f32, 1.0));
 
     store(rewriter, loc, zeroF, output, zero);
@@ -423,13 +427,13 @@ struct FusedRollingStatsLowering : mlir::OpRewritePattern<FusedRollingStatsOp> {
                                            mlir::Value mu) {
             mlir::Value sq = b.create<mlir::arith::MulFOp>(l, mu, mu);
             mlir::Value var = b.create<mlir::arith::SubFOp>(l, msq, sq);
-            auto z = b.create<mlir::arith::ConstantFloatOp>(l, mlir::FloatAttr::get(f32, 0.0));
+            mlir::Value z = b.create<mlir::arith::ConstantOp>(l, mlir::FloatAttr::get(f32, 0.0));
             auto pred = b.create<mlir::arith::CmpFOp>(l, mlir::arith::CmpFPredicate::OLT, var, z);
             return b.create<mlir::arith::SelectOp>(l, pred, z, var);
           });
       mlir::Value stddev = buildElementwiseUnary(
           rewriter, loc, variance, [&](mlir::OpBuilder &b, mlir::Location l, mlir::Value v) {
-            return b.create<mlir::arith::SqrtOp>(l, v);
+            return b.create<mlir::math::SqrtOp>(l, v);
           });
       rewriter.replaceOp(op, mlir::ValueRange{mean, stddev});
       return mlir::success();
@@ -438,13 +442,13 @@ struct FusedRollingStatsLowering : mlir::OpRewritePattern<FusedRollingStatsOp> {
     mlir::Value meanOut = allocLike(rewriter, loc, type);
     mlir::Value stdOut = allocLike(rewriter, loc, type);
     {
-      auto zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
-      auto one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
-      auto nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
-      auto wCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, window);
-      auto invW = rewriter.create<mlir::arith::ConstantFloatOp>(
+      mlir::Value zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
+      mlir::Value one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
+      mlir::Value nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
+      mlir::Value wCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, window);
+      mlir::Value invW = rewriter.create<mlir::arith::ConstantOp>(
           loc, mlir::FloatAttr::get(f32, 1.0 / static_cast<double>(window)));
-      auto zeroF = rewriter.create<mlir::arith::ConstantFloatOp>(
+      mlir::Value zeroF = rewriter.create<mlir::arith::ConstantOp>(
           loc, mlir::FloatAttr::get(f32, 0.0));
 
       auto kLoop = rewriter.create<mlir::scf::ForOp>(loc, zero, nCst, one);
@@ -459,7 +463,9 @@ struct FusedRollingStatsLowering : mlir::OpRewritePattern<FusedRollingStatsOp> {
       mlir::Value i = iLoop.getInductionVar();
       mlir::Value iterSum = iLoop.getRegionIterArgs()[0];
       mlir::Value iterSumSq = iLoop.getRegionIterArgs()[1];
-      mlir::Value j = rewriter.create<mlir::arith::SubIOp>(loc, k, i);
+      mlir::Value padCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, (window - 1) / 2);
+      mlir::Value kPlusPad = rewriter.create<mlir::arith::AddIOp>(loc, k, padCst);
+      mlir::Value j = rewriter.create<mlir::arith::SubIOp>(loc, kPlusPad, i);
       auto jGe0 = rewriter.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sge, j,
                                                        zero);
       auto jLtN = rewriter.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, j,
@@ -489,7 +495,7 @@ struct FusedRollingStatsLowering : mlir::OpRewritePattern<FusedRollingStatsOp> {
       auto pred = rewriter.create<mlir::arith::CmpFOp>(loc, mlir::arith::CmpFPredicate::OLT, var,
                                                        zeroF);
       var = rewriter.create<mlir::arith::SelectOp>(loc, pred, zeroF, var);
-      mlir::Value stddev = rewriter.create<mlir::arith::SqrtOp>(loc, var);
+      mlir::Value stddev = rewriter.create<mlir::math::SqrtOp>(loc, var);
       store(rewriter, loc, mean, meanOut, k);
       store(rewriter, loc, stddev, stdOut, k);
       rewriter.setInsertionPointAfter(kLoop);
@@ -525,9 +531,9 @@ struct FusedRollingCovLowering : mlir::OpRewritePattern<FusedRollingCovOp> {
     auto type = llvm::cast<mlir::MemRefType>(meanXY.getType());
     const int64_t n = type.getDimSize(0);
     mlir::Value output = allocLike(rewriter, loc, type);
-    auto zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
-    auto one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
-    auto nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
+    mlir::Value zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
+    mlir::Value one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
+    mlir::Value nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
     auto loop = rewriter.create<mlir::scf::ForOp>(loc, zero, nCst, one);
     rewriter.setInsertionPointToStart(loop.getBody());
     mlir::Value idx = loop.getInductionVar();
@@ -552,9 +558,9 @@ struct EmitLowering : mlir::OpRewritePattern<EmitOp> {
     auto loc = op.getLoc();
     auto type = llvm::cast<mlir::MemRefType>(op.getValue().getType());
     const int64_t n = type.getDimSize(0);
-    auto zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
-    auto one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
-    auto nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
+    mlir::Value zero = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
+    mlir::Value one = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
+    mlir::Value nCst = rewriter.create<mlir::arith::ConstantIndexOp>(loc, n);
 
     auto loop = rewriter.create<mlir::scf::ForOp>(loc, zero, nCst, one);
     rewriter.setInsertionPointToStart(loop.getBody());

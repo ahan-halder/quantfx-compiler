@@ -62,6 +62,15 @@ All benchmarks measured on **100,000 synthetic LOBSTER tick messages** with CPU 
 
 The p99/median ratio across all kernels stays below **1.5×**, confirming near-deterministic execution with no GC pauses, no page faults, and no kernel-mode transitions.
 
+### Verification & Correctness (NumPy Reference)
+
+The compiler includes an automated correctness suite (`tests/run_correctness.py`) that compares JIT-compiled MLIR kernels against NumPy reference implementations across synthetic data streams:
+- **Rolling Mean** (`rolling_mean`): Centered sliding window convolution (`mode="same"` with `(window - 1) / 2` offset) verified against `np.convolve`.
+- **Rolling VWAP** (`rolling_vwap`): Volume-weighted average price verified across 1,024 tick windows.
+- **Z-Score Signal** (`zscore`): Full multi-op chain (`rolling_vwap` + `rolling_std` + `zscore`) verified against reference Z-score calculations.
+
+All kernels execute natively via LLVM 18 ORC JIT with `_mlir_ciface_` C-interface packed ABI calling conventions, achieving 100% test pass rate with `< 1e-4` relative error.
+
 ---
 
 ## Architecture
